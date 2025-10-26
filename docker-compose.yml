@@ -1,0 +1,85 @@
+
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "postgres"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh entrypoint.sh
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=Local
+      - DJANGO_SETTINGS_MODULE=project.settings
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONMALLOC=malloc
+      - MALLOC_ARENA_MAX=2
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+    # Memory management
+    mem_limit: 2g
+    mem_reservation: 1g
+    memswap_limit: 3g
+    restart: unless-stopped
+    oom_kill_disable: false
+
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A project worker -l info
+    volumes:
+      - .:/code
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=project.settings
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - backend
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A project beat -l info
+    volumes:
+      - .:/code
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=project.settings
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - backend
+
+volumes:
+  postgres_data:

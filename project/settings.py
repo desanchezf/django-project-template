@@ -16,25 +16,32 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-vz+du974h9+nba#ix&ggwst-sqs8cgsd%@1txg^sht#d_^fmlt"
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-vz+du974h9+nba#ix&ggwst-sqs8cgsd%@1txg^sht#d_^fmlt",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,backend").split(",")
+    if h.strip()
+]
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    # Unfold django theme
-    "unfold",
+    # Jazzmin admin theme (debe ir antes de django.contrib.admin)
+    "jazzmin",
     "crispy_forms",
+    "crispy_bootstrap5",
     # Django apps
     "django.contrib.admin",
     "django.contrib.auth",
@@ -86,15 +93,15 @@ WSGI_APPLICATION = "project.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
+# En Docker usa POSTGRES_* del .env (mismas variables que el contenedor postgres)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "postgres",
-        "USER": "postgres",
-        "PASSWORD": "postgres",
-        "HOST": "postgres",
-        "PORT": "5432",
+        "NAME": os.environ.get("POSTGRES_DB", "postgres"),
+        "USER": os.environ.get("POSTGRES_USER", "postgres"),
+        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "postgres"),
+        "HOST": os.environ.get("POSTGRES_HOST", "postgres"),
+        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
     }
 }
 
@@ -146,8 +153,8 @@ ROLE_PERMISSIONS = {
     "owner": [],
 }
 
-CRISPY_ALLOWED_TEMPLATE_PACKS = ["unfold_crispy"]
-CRISPY_TEMPLATE_PACK = "unfold_crispy"
+CRISPY_ALLOWED_TEMPLATE_PACKS = ["bootstrap5"]
+CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 # Django REST Framework
 REST_FRAMEWORK = {
@@ -174,11 +181,13 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Cache configuration con Redis
+# Cache configuration con Redis (usa REDIS_URL del .env en Docker)
+_default_redis = "redis://redis:6379/0"
+_cache_location = os.environ.get("REDIS_URL", _default_redis).rstrip("/0") + "/1"
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://redis:6379/1",
+        "LOCATION": _cache_location,
     }
 }
 
@@ -186,8 +195,8 @@ CACHES = {
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
-# Celery Configuration
-CELERY_BROKER_URL = "redis://redis:6379/0"
+# Celery Configuration (usa CELERY_BROKER_URL del .env en Docker)
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"

@@ -1,12 +1,14 @@
 # django-project-template
 
-Plantilla de proyecto Django con DRF, tema Unfold, Celery, Redis, PostgreSQL, Prometheus, Grafana y librerías de Machine Learning.
+Plantilla de proyecto Django con DRF, tema Jazzmin (admin), Celery, Redis, PostgreSQL, Prometheus, Grafana y librerías de Machine Learning.
+
+![Vista de la interfaz](static/index.png)
 
 ## Stack tecnológico
 
 - **Python 3.14** (imagen base Bookworm)
 - **Django 5.2** con Django REST Framework
-- **django-unfold** – tema de administración moderno
+- **django-jazzmin** – tema de administración (AdminLTE 3 + Bootstrap 5)
 - **Celery** – colas y tareas asíncronas (worker + beat)
 - **Redis** – broker de Celery y caché
 - **PostgreSQL 16** – base de datos
@@ -18,7 +20,7 @@ Plantilla de proyecto Django con DRF, tema Unfold, Celery, Redis, PostgreSQL, Pr
 ### Web y API
 - Django 5.2, djangorestframework, django-cors-headers
 - django-crispy-forms, django-environ
-- django-unfold (admin), django-redis
+- django-jazzmin (admin), django-redis
 
 ### Tareas y caché
 - celery, django-celery-beat, django-celery-results
@@ -39,13 +41,13 @@ Plantilla de proyecto Django con DRF, tema Unfold, Celery, Redis, PostgreSQL, Pr
 
 | Servicio      | Contenedor        | Puerto | Descripción                    |
 |---------------|-------------------|--------|--------------------------------|
-| backend       | nba-backend       | 8000   | Aplicación Django              |
-| postgres      | nba-postgres      | 5432   | Base de datos PostgreSQL       |
-| redis         | nba-redis         | 6379   | Redis (broker Celery / caché)  |
-| celery        | nba-celery-worker | -      | Worker de Celery               |
-| celery-beat   | nba-celery-beat   | -      | Planificador de tareas Celery  |
-| prometheus    | nba-prometheus    | 9090   | Servidor de métricas           |
-| grafana       | nba-grafana       | 3000   | Dashboards (admin/admin)       |
+| backend       | django-template-backend       | 8000   | Aplicación Django              |
+| postgres      | django-template-postgres      | 5432   | Base de datos PostgreSQL       |
+| redis         | django-template-redis         | 6379   | Redis (broker Celery / caché)  |
+| celery        | django-template-celery-worker | -      | Worker de Celery               |
+| celery-beat   | django-template-celery-beat   | -      | Planificador de tareas Celery  |
+| prometheus    | django-template-prometheus    | 9090   | Servidor de métricas           |
+| grafana       | django-template-grafana       | 3000   | Dashboards (admin/admin)       |
 
 ## Uso
 
@@ -61,6 +63,19 @@ Plantilla de proyecto Django con DRF, tema Unfold, Celery, Redis, PostgreSQL, Pr
    - App: http://localhost:8000
    - Admin Grafana: http://localhost:3000 (admin / admin)
    - Prometheus: http://localhost:9090
+
+## Si falla la conexión a Postgres («password authentication failed»)
+
+La contraseña de Postgres se define **solo la primera vez** que se crea el volumen. Si en `.env` tienes `POSTGRES_PASSWORD=postgres`, el backend y el contenedor postgres deben usar la misma.
+
+- Si el volumen ya existía con la contraseña `postgres`, pon en `.env`: `POSTGRES_PASSWORD=postgres`.
+- Si quieres cambiar de contraseña o no coincide: borra el volumen y vuelve a levantar para que Postgres se inicialice de nuevo con la de `.env`:
+
+  ```bash
+  docker compose down -v
+  # Revisa .env (POSTGRES_PASSWORD y el usuario deben coincidir)
+  docker compose up -d
+  ```
 
 ## Gestión de memoria
 

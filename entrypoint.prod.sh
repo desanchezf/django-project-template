@@ -21,12 +21,21 @@ except Exception as e:
   sleep 2
 done
 
-echo "Ejecutando initsetup..."
-until python ./manage.py initsetup; do
-  echo "Retrying initsetup..."
-  sleep 5
-done
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+python manage.py initsetup || true
 
-# Desarrollo local: runserver (autoreload)
-# Producción: usar entrypoint.prod.sh / gunicorn
-exec python manage.py runserver 0.0.0.0:8000
+# Varios workers para usuarios concurrentes
+# Override con GUNICORN_WORKERS / GUNICORN_THREADS en .env
+WORKERS="${GUNICORN_WORKERS:-4}"
+THREADS="${GUNICORN_THREADS:-2}"
+TIMEOUT="${GUNICORN_TIMEOUT:-60}"
+
+exec gunicorn project.wsgi:application \
+  --bind 0.0.0.0:8000 \
+  --workers "$WORKERS" \
+  --threads "$THREADS" \
+  --timeout "$TIMEOUT" \
+  --access-logfile - \
+  --error-logfile - \
+  --worker-tmp-dir /dev/shm

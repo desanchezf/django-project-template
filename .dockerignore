@@ -60,6 +60,11 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 
+# Secrets / env
+.env
+.env.*
+!.env.example
+
 # Documentation
 README.md
 docs/
@@ -67,3 +72,9 @@ docs/
 # Logs
 logs/
 *.log
+
+# Nginx / compose (no necesarios dentro de la imagen)
+nginx/
+docker-compose*.yml
+prometheus/
+grafana/

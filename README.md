@@ -1,82 +1,137 @@
 # django-project-template
 
-Plantilla de proyecto Django con DRF, tema Jazzmin (admin), Celery, Redis, PostgreSQL, Prometheus, Grafana y librerías de Machine Learning.
+Plantilla Django lista para desarrollo local y despliegue en producción, con sesiones multi-usuario, Celery, Redis, PostgreSQL, Prometheus y Grafana.
 
 ![Vista de la interfaz](static/index.png)
 
-## Stack tecnológico
+## Stack
 
-- **Python 3.14** (imagen base Bookworm)
-- **Django 5.2** con Django REST Framework
-- **django-jazzmin** – tema de administración (AdminLTE 3 + Bootstrap 5)
-- **Celery** – colas y tareas asíncronas (worker + beat)
-- **Redis** – broker de Celery y caché
-- **PostgreSQL 16** – base de datos
-- **Prometheus** – métricas
-- **Grafana** – dashboards y visualización de métricas
+| Pieza | Detalle |
+|-------|---------|
+| Python | 3.13 (Bookworm) |
+| Django | 5.2.17 + DRF + Jazzmin |
+| Tareas | Celery + django-celery-beat/results |
+| Datos | PostgreSQL 16 + Redis 7 |
+| Local | `runserver` en `:8000` (sin nginx ni WAF) |
+| Producción | Gunicorn + WhiteNoise + **nginx** |
+| Métricas | Prometheus + Grafana (en ambos profiles) |
 
-## Dependencias principales
+## Profiles (`local` | `production`)
 
-### Web y API
-- Django 5.2, djangorestframework, django-cors-headers
-- django-crispy-forms, django-environ
-- django-jazzmin (admin), django-redis
+Solo hay **dos** profiles:
 
-### Tareas y caché
-- celery, django-celery-beat, django-celery-results
-- redis
+| Profile | Incluye | No incluye |
+|---------|---------|------------|
+| `local` | postgres, redis, backend, celery, beat, prometheus, grafana | nginx, WAF |
+| `production` | lo mismo + **nginx** (puerto 80) | WAF |
 
-### Observabilidad
-- django-prometheus
+### Arranque local
 
-### Datos y ML
-- polars, pandas, numpy
-- scikit-learn, xgboost, lightgbm
-- joblib, tqdm
+```bash
+cp .env.example .env
+# COMPOSE_PROFILES=local (ya viene en .env.example)
+docker compose --profile local up -d --build
+```
 
-### Base de datos
-- psycopg2-binary
+O con `COMPOSE_PROFILES=local` en `.env`:
 
-## Servicios Docker
+```bash
+docker compose up -d --build
+```
 
-| Servicio      | Contenedor        | Puerto | Descripción                    |
-|---------------|-------------------|--------|--------------------------------|
-| backend       | django-template-backend       | 8000   | Aplicación Django              |
-| postgres      | django-template-postgres      | 5432   | Base de datos PostgreSQL       |
-| redis         | django-template-redis         | 6379   | Redis (broker Celery / caché)  |
-| celery        | django-template-celery-worker | -      | Worker de Celery               |
-| celery-beat   | django-template-celery-beat   | -      | Planificador de tareas Celery  |
-| prometheus    | django-template-prometheus    | 9090   | Servidor de métricas           |
-| grafana       | django-template-grafana       | 3000   | Dashboards (admin/admin)       |
+| URL | Servicio |
+|-----|----------|
+| http://localhost:8000/admin/ | Django Admin |
+| http://localhost:9090 | Prometheus |
+| http://localhost:3000 | Grafana (admin/admin) |
 
-## Uso
+### Arranque producción
 
-1. **Variables de entorno**: Copiar `cp .env.example .env` y editar `.env` con los valores reales (contraseñas, `SECRET_KEY`, etc.). Todos los secretos y configuraciones sensibles se gestionan vía `.env`; el `docker-compose` los inyecta en los servicios.
-2. La configuración de Prometheus está en `prometheus/prometheus.yml` (scrape del backend en `/metrics`). Opcional: añadir `grafana/provisioning` para datasources/dashboards.
-3. Levantar los servicios:
+En `.env`:
 
-   ```bash
-   docker compose up -d
-   ```
+```env
+COMPOSE_PROFILES=production
+DJANGO_ENV=production
+DEBUG=0
+ENTRYPOINT_SCRIPT=entrypoint.prod.sh
+```
 
-4. Accesos típicos:
-   - App: http://localhost:8000
-   - Admin Grafana: http://localhost:3000 (admin / admin)
-   - Prometheus: http://localhost:9090
+```bash
+docker compose --profile production up -d --build
+```
 
-## Si falla la conexión a Postgres («password authentication failed»)
+Entrada HTTP recomendada: http://localhost (nginx → backend).
 
-La contraseña de Postgres se define **solo la primera vez** que se crea el volumen. Si en `.env` tienes `POSTGRES_PASSWORD=postgres`, el backend y el contenedor postgres deben usar la misma.
+## Usuarios / sesiones simultáneas
 
-- Si el volumen ya existía con la contraseña `postgres`, pon en `.env`: `POSTGRES_PASSWORD=postgres`.
-- Si quieres cambiar de contraseña o no coincide: borra el volumen y vuelve a levantar para que Postgres se inicialice de nuevo con la de `.env`:
+- Sesiones en Redis + DB (`cached_db`): varios usuarios a la vez.
+- En producción, Gunicorn con varios workers/threads (`GUNICORN_WORKERS`, `GUNICORN_THREADS`).
+- Pool de conexiones Postgres (`DB_CONN_MAX_AGE`).
+- Caché Redis compartida entre workers.
 
-  ```bash
-  docker compose down -v
-  # Revisa .env (POSTGRES_PASSWORD y el usuario deben coincidir)
-  docker compose up -d
-  ```
+## Local vs producción
 
-## Gestión de memoria
+| | Local | Producción |
+|---|--------|------------|
+| Profile | `local` | `production` |
+| `DJANGO_ENV` | `local` | `production` |
+| `DEBUG` | `1` | `0` |
+| `ENTRYPOINT_SCRIPT` | `entrypoint.sh` | `entrypoint.prod.sh` |
+| HTTP | `:8000` directo | nginx `:80` → backend |
+| nginx / WAF | No | Solo nginx |
 
-El backend tiene límites y reservas de memoria (`mem_limit`, `mem_reservation`, `memswap_limit`) y variables de entorno para reducir fragmentación (`PYTHONMALLOC`, `MALLOC_ARENA_MAX`). El Dockerfile incluye optimizaciones de memoria y GC (`PYTHONGC`, `PYTHONHASHSEED`).
+## Dependencias
+
+`requirements.txt` con versiones **fijadas**. Sin Polars. ML opcional comentado.
+
+## Servicios
+
+| Servicio | Contenedor | Puerto | Profiles |
+|----------|------------|--------|----------|
+| backend | django-template-backend | 8000 | local, production |
+| postgres | django-template-postgres | 5432 | local, production |
+| redis | django-template-redis | 6379 | local, production |
+| celery | django-template-celery-worker | — | local, production |
+| celery-beat | django-template-celery-beat | — | local, production |
+| prometheus | django-template-prometheus | 9090 | local, production |
+| grafana | django-template-grafana | 3000 | local, production |
+| nginx | django-template-nginx | 80 | **solo production** |
+
+## Buenas prácticas Docker
+
+- Healthchecks y `depends_on` con `service_healthy`.
+- Red `app_net`, usuario no-root en la imagen, secrets vía `.env`.
+- Profiles: en local no se levanta nginx ni WAF.
+
+## Exportar datos (Admin)
+
+**django-import-export**: botón Export en `/admin/` (CSV, XLSX, JSON, …).
+
+## Postgres: «password authentication failed»
+
+```bash
+docker compose down -v
+docker compose --profile local up -d --build
+```
+
+## Actualizar desde el template
+
+```bash
+git remote add template https://github.com/TU-USUARIO/django-project-template.git
+git fetch template
+git merge template/main
+```
+
+## Estructura
+
+```
+├── docker-compose.yml      # profiles: local | production
+├── Dockerfile
+├── entrypoint.sh           # Local (runserver)
+├── entrypoint.prod.sh      # Prod (gunicorn)
+├── nginx/                  # Solo profile production
+├── prometheus/
+├── grafana/provisioning/
+├── .env.example
+└── requirements.txt
+```

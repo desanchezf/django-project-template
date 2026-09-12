@@ -1,55 +1,63 @@
-# Versión de linux que se va a utilizar dentro del container
-FROM python:3.14-bookworm
-# FROM python:3.14-bookworm -> Por ahora incomplatible con el tema
+# Multi-stage: build tools no quedan en la imagen final
+FROM python:3.13-slim-bookworm AS builder
 
-# Evita la generación de archivos de bytecode (.pyc)
-ENV PYTHONDONTWRITEBYTECODE 1
-# Evita el almacenamiento en búfer de la salida y el error estándar
-ENV PYTHONUNBUFFERED 1
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Instalar dependencias del sistema y herramientas de compilación
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
     g++ \
     build-essential \
-    gettext \
-    curl \
-    wget \
-    gnupg \
-    unzip \
-    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir uv
 
-# Instalar UV usando pip (más confiable en contenedores)
-RUN pip install uv
-
-RUN mkdir /code
-WORKDIR /code
-
-# Copiar solo requirements.txt primero para aprovechar cache de Docker
-COPY requirements.txt /code/
-
-# Usar UV para instalar dependencias (mucho más rápido que pip)
-# --system: instala en el sistema Python
-# --no-cache: evita cache local para builds más limpios
-# Añadir flags de compilación para pandas si es necesario compilar desde fuente
-ENV CFLAGS="-Wno-error=unused-function"
+WORKDIR /build
+COPY requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt
 
-# Instalar herramientas adicionales
-RUN apt-get update && apt-get install -y htop && rm -rf /var/lib/apt/lists/*
 
-# Memory management
-ENV PYTHONMALLOC=malloc
-ENV MALLOC_ARENA_MAX=2
-ENV PYTHONHASHSEED=random
+FROM python:3.13-slim-bookworm AS runtime
 
-# Optimizar garbage collection
-ENV PYTHONGC=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONMALLOC=malloc \
+    MALLOC_ARENA_MAX=2 \
+    PYTHONHASHSEED=random \
+    PYTHONGC=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Paths escritos por la app (read_only rootfs + tmpfs/volumes)
+    HOME=/code
 
-COPY . /code/
+# Solo runtime libs (sin compiladores)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 1000 app \
+    && useradd --system --uid 1000 --gid app --create-home --home-dir /code --shell /usr/sbin/nologin app
 
-# Dar permisos de ejecución al entrypoint
-RUN chmod +x /code/entrypoint.sh
+# Dependencias Python desde el builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+WORKDIR /code
+
+# Código (sin .env: está en .dockerignore)
+COPY --chown=app:app . /code/
+
+RUN mkdir -p /code/staticfiles /code/media /code/tmp \
+    && chmod +x /code/entrypoint.sh /code/entrypoint.prod.sh \
+    && chown -R app:app /code
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/admin/login/ || exit 1
+
+CMD ["sh", "entrypoint.sh"]
